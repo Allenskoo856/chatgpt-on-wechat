@@ -171,6 +171,100 @@ class ChatGPTBot(Bot, OpenAIImage):
             else:
                 return result
 
+    def create_img(self, query, retry_count=0, api_key=None):
+        text_to_image_model = conf().get("text_to_image")
+        
+        if text_to_image_model == "doubao-seedream-4-0-250828":
+            return self.create_img_doubao(query, retry_count)
+        elif conf().get("use_azure_chatgpt", False):
+            return self.create_img_azure(query, retry_count, api_key)
+        else:
+            return self.create_img_openai(query, retry_count, api_key)
+
+    def create_img_openai(self, query, retry_count=0, api_key=None):
+        try:
+            logger.info("[OPENAI] image_query={}".format(query))
+            openai.api_key = api_key or conf().get("open_ai_api_key")
+            if conf().get("open_ai_api_base"):
+                openai.api_base = conf().get("open_ai_api_base")
+            response = openai.Image.create(
+                prompt=query,
+                n=1,
+                model=conf().get("text_to_image", "dall-e-2"),
+                size=conf().get("image_create_size", "1024x1024"),
+            )
+            image_url = response["data"][0]["url"]
+            logger.info("[OPENAI] image_url={}".format(image_url))
+            return True, image_url
+        except Exception as e:
+            logger.error("[OPENAI] create image error: {}".format(e))
+            return False, "图片生成失败"
+
+    def create_img_azure(self, query, retry_count=0, api_key=None):
+        # Azure implementation would go here
+        return False, "Azure 图像生成在基础 ChatGPTBot 中不可用"
+
+    def create_img_doubao(self, query, retry_count=0):
+        """
+        使用火山引擎 doubao-seedream-4.0 模型生成图像
+        """
+        try:
+            import requests
+            import json
+            
+            # 获取配置
+            api_key = conf().get("open_ai_api_key")
+            api_base = conf().get("open_ai_api_base", "https://ark.cn-beijing.volces.com/api/v3")
+            
+            # 确保 API base 以斜杠结尾
+            if not api_base.endswith("/"):
+                api_base = api_base + "/"
+            
+            url = f"{api_base}images/generations"
+            
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            data = {
+                "model": "doubao-seedream-4-0-250828",
+                "prompt": query,
+                "size": conf().get("image_create_size", "1024x1024"),
+                "sequential_image_generation": "disabled",
+                "stream": False,
+                "response_format": "url"
+            }
+            
+            logger.info(f"[DOUBAO] 图像生成请求: {query}")
+            
+            response = requests.post(url, headers=headers, json=data, timeout=60)
+            response.raise_for_status()
+            
+            result = response.json()
+            
+            if 'data' in result and len(result['data']) > 0 and 'url' in result['data'][0]:
+                image_url = result['data'][0]['url']
+                logger.info(f"[DOUBAO] 图像生成成功: {image_url}")
+                return True, image_url
+            else:
+                logger.error(f"[DOUBAO] 图像生成失败: 响应中没有图像 URL")
+                return False, "图像生成失败"
+                
+        except requests.exceptions.RequestException as e:
+            error_msg = f"[DOUBAO] 网络请求失败: {str(e)}"
+            logger.error(error_msg)
+            if retry_count < 2:
+                logger.info(f"[DOUBAO] 第{retry_count + 1}次重试...")
+                time.sleep(3)
+                return self.create_img_doubao(query, retry_count + 1)
+            return False, "图像生成失败，请稍后再试"
+            
+        except Exception as e:
+            error_msg = f"[DOUBAO] 图像生成异常: {str(e)}"
+            logger.error(error_msg)
+            return False, "图像生成失败"
+
 
 class AzureChatGPTBot(ChatGPTBot):
     def __init__(self):
@@ -180,6 +274,33 @@ class AzureChatGPTBot(ChatGPTBot):
         self.args["deployment_id"] = conf().get("azure_deployment_id")
 
     def create_img(self, query, retry_count=0, api_key=None):
+        text_to_image_model = conf().get("text_to_image")
+        
+        if text_to_image_model == "doubao-seedream-4-0-250828":
+            return self.create_img_doubao(query, retry_count)
+        else:
+            return self.create_img_azure(query, retry_count, api_key)
+
+    def create_img_openai(self, query, retry_count=0, api_key=None):
+        try:
+            logger.info("[OPENAI] image_query={}".format(query))
+            openai.api_key = api_key or conf().get("open_ai_api_key")
+            if conf().get("open_ai_api_base"):
+                openai.api_base = conf().get("open_ai_api_base")
+            response = openai.Image.create(
+                prompt=query,
+                n=1,
+                model=conf().get("text_to_image", "dall-e-2"),
+                size=conf().get("image_create_size", "1024x1024"),
+            )
+            image_url = response["data"][0]["url"]
+            logger.info("[OPENAI] image_url={}".format(image_url))
+            return True, image_url
+        except Exception as e:
+            logger.error("[OPENAI] create image error: {}".format(e))
+            return False, "图片生成失败"
+
+    def create_img_azure(self, query, retry_count=0, api_key=None):
         text_to_image_model = conf().get("text_to_image")
         if text_to_image_model == "dall-e-2":
             api_version = "2023-06-01-preview"
@@ -247,3 +368,65 @@ class AzureChatGPTBot(ChatGPTBot):
                 return False, "图片生成失败"
         else:
             return False, "图片生成失败，未配置text_to_image参数"
+
+    def create_img_doubao(self, query, retry_count=0):
+        """
+        使用火山引擎 doubao-seedream-4.0 模型生成图像
+        """
+        try:
+            import requests
+            import json
+            
+            # 获取配置
+            api_key = conf().get("open_ai_api_key")
+            api_base = conf().get("open_ai_api_base", "https://ark.cn-beijing.volces.com/api/v3")
+            
+            # 确保 API base 以斜杠结尾
+            if not api_base.endswith("/"):
+                api_base = api_base + "/"
+            
+            url = f"{api_base}images/generations"
+            
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            data = {
+                "model": "doubao-seedream-4-0-250828",
+                "prompt": query,
+                "size": conf().get("image_create_size", "1024x1024"),
+                "sequential_image_generation": "disabled",
+                "stream": False,
+                "response_format": "url",
+                "watermark": conf().get("doubao_watermark", True)
+            }
+            
+            logger.info(f"[DOUBAO] 图像生成请求: {query}")
+            
+            response = requests.post(url, headers=headers, json=data, timeout=60)
+            response.raise_for_status()
+            
+            result = response.json()
+            
+            if 'data' in result and len(result['data']) > 0 and 'url' in result['data'][0]:
+                image_url = result['data'][0]['url']
+                logger.info(f"[DOUBAO] 图像生成成功: {image_url}")
+                return True, image_url
+            else:
+                logger.error(f"[DOUBAO] 图像生成失败: 响应中没有图像 URL")
+                return False, "图像生成失败"
+                
+        except requests.exceptions.RequestException as e:
+            error_msg = f"[DOUBAO] 网络请求失败: {str(e)}"
+            logger.error(error_msg)
+            if retry_count < 2:
+                logger.info(f"[DOUBAO] 第{retry_count + 1}次重试...")
+                time.sleep(3)
+                return self.create_img_doubao(query, retry_count + 1)
+            return False, "图像生成失败，请稍后再试"
+            
+        except Exception as e:
+            error_msg = f"[DOUBAO] 图像生成异常: {str(e)}"
+            logger.error(error_msg)
+            return False, "图像生成失败"
